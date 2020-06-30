@@ -1,6 +1,6 @@
 from types import BuiltinFunctionType
 from typing import List
-from numpy import array_equal
+from numpy import array_equal, greater, greater_equal, less_equal
 from collections import deque, OrderedDict
 
 
@@ -32,11 +32,9 @@ class Label(object):
 
     def __eq__(self, other):
         if other:
-            if self.weight != other.weight:
-                return False
             if self.node != other.node:
                 return False
-            if not array_equal(self.res, other.res):
+            if self.weight != other.weight:
                 return False
             if self.path != other.path:
                 return False
@@ -72,10 +70,10 @@ class Label(object):
             if self.res[0] < other.res[0]:
                 return False
             # Check for all other resources (non-decreasing)
-            if any(self.res[1:] > other.res[1:]):
+            if any(greater(self.res[1:], other.res[1:])):
                 return False
         elif direction == "forward":
-            if any(self.res > other.res):
+            if any(greater(self.res, other.res)):
                 return False
         return True
 
@@ -141,7 +139,8 @@ class Label(object):
         `min_res` - Lower bound
         :return: True if resource feasible label, False otherwise.
         """
-        return all(max_res >= self.res) and all(min_res <= self.res)
+        return all(greater_equal(max_res, self.res)) and all(
+            less_equal(min_res, self.res))
 
     def check_threshold(self, threshold) -> bool:
         """Check if a s-t path has a total weight

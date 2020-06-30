@@ -2,12 +2,12 @@ import setuptools
 
 setuptools.setup(
     name="cspy",
-    version="0.0.12",
+    version="0.2.0",
     description=
     "A collection of algorithms for the (Resource) Constrained Shortest Path Problem",
     license="MIT",
     author="David Torres",
-    author_email="d.torressanchez@lancs.ac.uk",
+    author_email="david.sanchez@sintef.no",
     keywords=[
         "shortest path", "resource constrained shortest path",
         "bidirectional algorithm", "tabu search"

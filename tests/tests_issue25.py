@@ -31,7 +31,11 @@ class TestsIssue25(unittest.TestCase):
 
     @parameterized.expand(zip(range(100), range(100)))
     def testBiDirectionalBothDynamic(self, _, seed):
-        bidirec = BiDirectional(self.G, self.max_res, self.min_res, seed=seed)
+        bidirec = BiDirectional(self.G,
+                                self.max_res,
+                                self.min_res,
+                                seed=seed,
+                                elementary=True)
         # Run and test results
         bidirec.run()
         path = bidirec.path

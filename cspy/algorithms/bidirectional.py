@@ -187,19 +187,19 @@ class BiDirectional:
         """
         self._init_searches()
         self._init_parallel()
-        fwd_thread = Process(target=self.fwd_search.run_parallel,
-                             args=(self.max_res, self.best_labels))
-        bwd_thread = Process(target=self.bwd_search.run_parallel,
-                             args=(self.min_res, self.best_labels))
+        fwd_proc = Process(target=self.fwd_search.run_parallel,
+                           args=(self.max_res, self.best_labels))
+        bwd_proc = Process(target=self.bwd_search.run_parallel,
+                           args=(self.min_res, self.best_labels))
         # Start up threads
-        fwd_thread.start()
-        bwd_thread.start()
+        fwd_proc.start()
+        bwd_proc.start()
         # Run searches
-        fwd_thread.join(self.time_limit)
-        bwd_thread.join(self.time_limit)
+        fwd_proc.join(self.time_limit)
+        bwd_proc.join(self.time_limit)
         # Terminate threads
-        fwd_thread.terminate()
-        bwd_thread.terminate()
+        fwd_proc.terminate()
+        bwd_proc.terminate()
         # Check if time limit exceeded without finding a path
         _ = self._terminate_serial()
 

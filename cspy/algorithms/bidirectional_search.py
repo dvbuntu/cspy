@@ -24,6 +24,7 @@ class Search:
         self.direction = direction
         self.elementary = elementary
         # Algorithm specific attributes #
+        self.iteration = 0
         self.current_label: Label = None
         self.unprocessed_labels: Dict[Label, Dict[List[Label]]] = OrderedDict()
         self.best_labels: List = deque()
@@ -104,26 +105,18 @@ class Search:
         if self.current_label not in self.unprocessed_labels:
             self.unprocessed_labels[self.current_label] = deque()
             self.unprocessed_count += 1
-        # Select edges with the same head/tail node as the current label node.
-        edges = deque(e for e in self.G.edges(data=True)
-                      if e[idx] == self.current_label.node)
-        # If Label not been seen before, initialise a list
         # Propagate current label along all suitable edges in current direction
-        for edge in edges:
+        for edge in (e for e in self.G.edges(data=True)
+                     if e[idx] == self.current_label.node):
             self._propagate_label(edge)
         self._clean_up_unprocessed_labels()
-        # Extend label
         next_label = self._get_next_label()
-        # If next label already been processed get another one.
-        # Repeat until all labels have been checked.
-        while True:
-            if next_label and next_label.seen:
-                next_label = self._get_next_label(next_label)
-            elif next_label is None or next_label:
-                break
+        self.current_label.seen = True  # Update current label as seen
         self.current_label = next_label  # Replace current label
         # Dominance
-        self._check_dominance(next_label)
+        if self.iteration % 2 == 0:
+            self._check_dominance(next_label)
+        self.iteration += 1
 
     def _propagate_label(self, edge):
         # Label propagation #
@@ -138,28 +131,18 @@ class Search:
 
     def _clean_up_unprocessed_labels(self):
         self._remove_labels([(self.current_label, False)])
-        self._remove_labels((k, True)
+        self._remove_labels((k, k.seen)
                             for k, v in self.unprocessed_labels.items()
                             if len(v) == 0)
 
     def _get_next_label(self, exclude_label: Label = None) -> Label:
-        try:
-            # Get labels from the current one
-            _labels = deque(
-                l for l in self.unprocessed_labels[self.current_label]
-                if l != exclude_label)
-        except ValueError:
-            # No more labels under current label
-            self.current_label.seen = True  # Update current label as seen
-            self.processed_count += 1
-            _labels = deque(
-                l for l in self.unprocessed_labels if l != exclude_label)
-        except KeyError:
-            # No more label keys, so look at sub lists
-            _labels = deque(l for k, v in self.unprocessed_labels.items()
-                            for l in v if l != exclude_label)
+        _labels = deque(l for l in self.unprocessed_labels if not l.seen)
+        _labels.extend(l for k, v in self.unprocessed_labels.items() for l in v
+                       if not l.seen)
         if _labels:
-            return min(_labels, key=lambda x: x.weight)
+            if self.direction == "forward":
+                return min(_labels, key=lambda x: x.res[0])
+            return max(_labels, key=lambda x: x.res[0])
         # No more labels to be processed
         return None
 
