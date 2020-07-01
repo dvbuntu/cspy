@@ -42,13 +42,16 @@ class Label(object):
         return False
 
     def __hash__(self):
-        return id(self)
+        return hash((self.node, self.weight))
 
     def __repr__(self):
         return str(self)
 
     def __str__(self):
-        return "Label({0},{1},{2})".format(self.weight, self.node, self.res)
+        return "Label({0},{1})".format(self.weight, self.path)
+
+    def __copy__(self):
+        return Label(self.weight, self.node, self.res, self.path)
 
     def dominates(self,
                   other,
@@ -63,8 +66,8 @@ class Label(object):
 
         if self.weight > other.weight:
             return False
-        if elementary and not other.is_path_subset(self):
-            return False
+        # if elementary and not other.is_path_subset(self):
+        #     return False
         if direction == "backward":
             # Check for the monotone resource (non-increasing)
             if self.res[0] < other.res[0]:

@@ -70,7 +70,8 @@ class TestsIssue17(unittest.TestCase):
         bidirec = BiDirectional(self.G,
                                 self.max_res,
                                 self.min_res,
-                                direction='forward')
+                                direction='forward',
+                                elementary=True)
         bidirec.run()
         path = bidirec.path
         cost = bidirec.total_cost
@@ -85,7 +86,8 @@ class TestsIssue17(unittest.TestCase):
         bidirec = BiDirectional(self.G,
                                 self.max_res,
                                 self.min_res,
-                                direction='backward')
+                                direction='backward',
+                                elementary=True)
         bidirec.run()
         path = bidirec.path
         cost = bidirec.total_cost

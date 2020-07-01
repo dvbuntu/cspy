@@ -16,21 +16,22 @@ class Search:
     """
 
     def __init__(self, G: DiGraph, max_res: List[float], min_res: List[float],
-                 direction: str, elementary: bool):
+                 direction: str, elementary: bool, dominance_checks: int):
         self.G = G
         self.max_res, self.min_res = max_res.copy(), min_res.copy()
         self.max_res_in, self.min_res_in = array(max_res.copy()), array(
             min_res.copy())
         self.direction = direction
         self.elementary = elementary
+        self.dominance_checks = dominance_checks
         # Algorithm specific attributes #
         self.iteration = 0
-        self.current_label: Label = None
-        self.unprocessed_labels: Dict[Label, Dict[List[Label]]] = OrderedDict()
-        self.best_labels: List = deque()
         self.unprocessed_count: int = 0
         self.processed_count: int = 0
         self.generated_count: int = 0
+        self.current_label: Label = None
+        self.unprocessed_labels: Dict[Label, Dict[List[Label]]] = OrderedDict()
+        self.best_labels: List = deque()
         self.final_label: Label = None
 
         self._init_labels()
@@ -109,13 +110,14 @@ class Search:
         for edge in (e for e in self.G.edges(data=True)
                      if e[idx] == self.current_label.node):
             self._propagate_label(edge)
-        self._clean_up_unprocessed_labels()
         next_label = self._get_next_label()
         self.current_label.seen = True  # Update current label as seen
         self.current_label = next_label  # Replace current label
         # Dominance
-        if self.iteration % 2 == 0:
+        if self.iteration % self.dominance_checks == 0:
+            self._clean_up_unprocessed_labels()
             self._check_dominance(next_label)
+        self.processed_count += 1
         self.iteration += 1
 
     def _propagate_label(self, edge):
@@ -135,7 +137,7 @@ class Search:
                             for k, v in self.unprocessed_labels.items()
                             if len(v) == 0)
 
-    def _get_next_label(self, exclude_label: Label = None) -> Label:
+    def _get_next_label(self) -> Label:
         _labels = deque(l for l in self.unprocessed_labels if not l.seen)
         _labels.extend(l for k, v in self.unprocessed_labels.items() for l in v
                        if not l.seen)
@@ -172,16 +174,15 @@ class Search:
             labels_to_pop = deque(
                 (l, self._check_destroy(label_to_check, l))
                 for l in labels_to_check
-                if label_to_check.dominates(l, self.direction, self.elementary))
+                if label_to_check.dominates(l, self.direction))
             # Add input label for removal if itself is dominated
             if any(
-                    l.dominates(label_to_check, self.direction, self.elementary)
+                    l.dominates(label_to_check, self.direction)
                     for l in labels_to_check):
                 destroy = any(
                     self._check_destroy(l, label_to_check)
                     for l in labels_to_check
-                    if l.dominates(label_to_check, self.direction,
-                                   self.elementary))
+                    if l.dominates(label_to_check, self.direction))
                 labels_to_pop.append((label_to_check, destroy))
             # Otherwise, save it
             elif not best:
@@ -218,6 +219,10 @@ class Search:
         # Remove all processed labels from unprocessed dict
         for label_to_pop, destroy in deque(set(labels_to_pop)):
             if destroy and label_to_pop in self.unprocessed_labels:
+                # Delete sub labels if already extended (rarely the case)
+                for l in (_ for _ in self.unprocessed_labels[label_to_pop]
+                          if _ in self.unprocessed_labels):
+                    del self.unprocessed_labels[l]
                 del self.unprocessed_labels[label_to_pop]
             if dominance and label_to_pop in self.best_labels:
                 idx = self.best_labels.index(label_to_pop)

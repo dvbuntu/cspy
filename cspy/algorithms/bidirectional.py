@@ -72,6 +72,10 @@ class BiDirectional:
         final path. Note this may increase run time.
         Default: False
 
+    dominance_checks : int, optional
+        multiple of iterations to run the dominance checks.
+        Default : 2 (every second iteration)
+
     seed : None or int or numpy.random.RandomState instance, optional
         seed for PSOLGENT class. Default : None (which gives a single value
         numpy.random.RandomState).
@@ -95,6 +99,7 @@ class BiDirectional:
                  time_limit: Optional[float] = None,
                  threshold: Optional[float] = None,
                  elementary: Optional[bool] = False,
+                 dominance_checks: Optional[int] = 2,
                  seed: Union[int, RandomState, None] = None,
                  REF_forward: Optional[Callable] = None,
                  REF_backward: Optional[Callable] = None,
@@ -120,6 +125,7 @@ class BiDirectional:
         self.time_limit = time_limit
         self.elementary = elementary
         self.threshold = threshold
+        self.dominance_checks = dominance_checks
         self.random_state = check_seed(seed)
         Label.REF_forward = REF_forward if REF_forward else add
         Label.REF_backward = REF_backward if REF_backward else sub
@@ -228,10 +234,10 @@ class BiDirectional:
         self.start_time = time()
         # Initialise forward search
         self.fwd_search = Search(self.G, self.max_res, self.min_res, "forward",
-                                 self.elementary)
+                                 self.elementary, self.dominance_checks)
         # initialise backward search
         self.bwd_search = Search(self.G, self.max_res, self.min_res, "backward",
-                                 self.elementary)
+                                 self.elementary, self.dominance_checks)
 
     def _init_parallel(self):
         mgr = Manager()
@@ -385,10 +391,12 @@ class BiDirectional:
         LOG.debug("joining")
         for fwd_label in self.best_labels["forward"]:
             # Create generator for backward labels using current forward label.
-            bwd_labels = (l for l in self.best_labels["backward"]
-                          if (fwd_label.node, l.node) in self.G.edges() and all(
-                              n not in fwd_label.path
-                              for n in l.path) and self._half_way(fwd_label, l))
+            bwd_labels = (
+                l for l in self.best_labels["backward"]
+                if (fwd_label.node, l.node) in self.G.edges() and (
+                    (self.elementary and all(n not in fwd_label.path
+                                             for n in l.path)) or
+                    not self.elementary) and self._half_way(fwd_label, l))
             for bwd_label in bwd_labels:
                 # Merge two labels
                 merged_label = self._merge_labels(fwd_label, bwd_label)
