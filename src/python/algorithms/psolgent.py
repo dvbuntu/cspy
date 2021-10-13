@@ -84,6 +84,9 @@ class PSOLGENT(PathBase):
     upper_bound : float, optional
         upper bound of initial positions. Default : 1.
 
+    swarm_node_order : bool, optional
+        flag to add another dimension to particle position used to indicate
+        node ordering (first to last). Default : False.
 
     c1 : float, optional
         constant for 1st term in the velocity equation.
@@ -128,6 +131,7 @@ class PSOLGENT(PathBase):
                  swarm_size: Optional[int] = 50,
                  member_size: Optional[int] = None,
                  neighbourhood_size: Optional[int] = 10,
+                 swarm_node_order: Optional[bool] = False,
                  lower_bound: Optional[float] = -1.,
                  upper_bound: Optional[float] = 1.,
                  c1: Optional[float] = 1.35,
@@ -144,10 +148,12 @@ class PSOLGENT(PathBase):
         self.time_limit = time_limit
         self.threshold = threshold
         self.swarm_size = swarm_size
-        self.member_size = member_size or len(G.nodes())
+        self.member_size = len(G.nodes())
+        self.swarm_node_order = swarm_node_order
+        self.ndim = 2 if self.swarm_node_order else 1
         self.hood_size = neighbourhood_size
-        self.lower_bound = lower_bound * np.ones(member_size)
-        self.upper_bound = upper_bound * np.ones(member_size)
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
         self.c1 = float(c1)
         self.c2 = float(c2)
         self.c3 = float(c3)
@@ -168,9 +174,12 @@ class PSOLGENT(PathBase):
         self.sorted_nodes = self._sort_nodes(list(self.G.nodes()))
         self._best_path = None
 
-    def _pos2path(self, pos, rands):
-        new_disc = self._discretise_solution(pos, rands)
-        return self._update_current_nodes(new_disc)
+    def _pos2path(self, pos, rand):
+        new_disc = self._discretise_solution(pos[0], rand)
+        if self.swarm_node_order:
+            return self._update_current_nodes(new_disc, pos[1])
+        else:
+            return self._update_current_nodes(new_disc)
 
     def run(self):
         """Calculate shortest path with resource constraints.
@@ -182,8 +191,8 @@ class PSOLGENT(PathBase):
             pos_new = self.pos + self._get_vel()
             new_rands = self.random_state.uniform(0, 1, size=self.swarm_size)
             # Force Source and Sink to be selected
-            pos_new[:, [0, -1]] = min(10 * self.lower_bound, np.min(pos_new))
-            paths_new = np.empty(len(pos_new), dtype='object')
+            pos_new[:, 0, [0, -1]] = min(np.min(10 * self.lower_bound), np.min(pos_new))
+            paths_new = np.empty(self.swarm_size, dtype='object')
             paths_new[:] = [
                 self._pos2path(p, r) for p, r in zip(pos_new, new_rands)
             ]
@@ -216,14 +225,15 @@ class PSOLGENT(PathBase):
         self.pos = self.random_state.uniform(self.lower_bound,
                                              self.upper_bound,
                                              size=(self.swarm_size,
+                                                   self.ndim,
                                                    self.member_size))
         self.rands = self.random_state.uniform(0, 1, size=self.swarm_size)
         self.vel = self.random_state.uniform(
             self.lower_bound - self.upper_bound,
             self.upper_bound - self.lower_bound,
-            size=(self.swarm_size, self.member_size))
+            size=(self.swarm_size, self.ndim, self.member_size))
         # Force Source and Sink to be selected
-        self.pos[:, [0, -1]] = min(10 * self.lower_bound, np.min(self.pos))
+        self.pos[:, [0, -1]] = min(np.min(10 * self.lower_bound), np.min(self.pos))
         self.paths = np.empty(len(self.pos), dtype='object')
         self.paths[:] = [
             self._pos2path(p, r) for p, r in zip(self.pos, self.rands)
@@ -235,29 +245,19 @@ class PSOLGENT(PathBase):
 
     def _get_vel(self):
         # Generate random numbers
-        u1 = np.zeros((self.swarm_size, self.swarm_size))
-        u1[np.diag_indices_from(u1)] = [
-            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
-        ]
-
-        u2 = np.zeros((self.swarm_size, self.swarm_size))
-        u2[np.diag_indices_from(u2)] = [
-            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
-        ]
-
-        u3 = np.zeros((self.swarm_size, self.swarm_size))
-        u3[np.diag_indices_from(u2)] = [
-            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
-        ]
+        u1 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
+        u2 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
+        u3 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
 
         # Coefficients
         c = self.c1 + self.c2 + self.c3
         chi_1 = 2 / abs(2 - c - sqrt(pow(c, 2) - 4 * c))
         # Returns velocity
-        return (chi_1 * (self.vel +
-                         (self.c1 * np.dot(u1, (self.best - self.pos)))) +
-                (self.c2 * np.dot(u2, (self.global_best - self.pos))) +
-                (self.c3 * np.dot(u3, (self.local_best - self.pos))))
+        # transpose so we can broadcast, and transpose back to restore dim
+        return chi_1 * (self.vel +
+                         (self.c1 * (u1.T * (self.best - self.pos).T).T) +
+                         (self.c2 * (u2.T * (self.global_best - self.pos).T).T) +
+                         (self.c3 * (u3.T * (self.local_best - self.pos).T).T))
 
     # also implicitly updates self.best_path
     def _update_best(self, old, new, old_rands, new_rands, old_paths,
@@ -280,7 +280,7 @@ class PSOLGENT(PathBase):
             best_paths[idx_old] = old_paths[idx_old]
             best_fitness[idx_old] = old_fitness[idx_old]
             # replace this with just find the rows where it is all zero
-            idx_new = np.all(best == 0, axis=1)
+            idx_new = [idx for idx in range(self.swarm_size) if idx not in idx_old]
             # replace indices in best with new members if lower fitness
             best[idx_new] = new[idx_new]
             best_rands[idx_new] = new_rands[idx_new]
@@ -327,29 +327,28 @@ class PSOLGENT(PathBase):
     # Fitness conversion to path representation of solutions and evaluation
     def _get_fitness(self, paths):
         # Applies objective function to all members of swarm
-        return [self._evaluate_member(p) for p in paths]
-
-    def _evaluate_member(self, path):
-        return self._get_fitness_member(path)
+        # paths already have nodes in desired order
+        return [self._fitness(p) for p in paths]
 
     @staticmethod
     def _discretise_solution(member, rand):
         sig = np.array(1 / (1 + np.exp(-member)))
         return (sig < rand) * 1
 
-    def _update_current_nodes(self, arr):
+    def _update_current_nodes(self, arr, order=None):
         """
         Saves binary representation of nodes in path.
         0 not present, 1 present.
         """
         nodes = self._sort_nodes(list(self.G.nodes()))
+        if self.swarm_node_order and order is not None:
+            # keep source and sink, but sort rest
+            myorder = np.argsort(order[1:-1])
+            nodes = [nodes[0]] + [nodes[i+1] for i in myorder] + [nodes[-1]]
+            arr = [arr[0]] + arr[myorder+1].tolist() + [arr[-1]]
         current_nodes = [nodes[i] for i in range(len(nodes)) if arr[i] == 1]
         soln = Solution(current_nodes, np.inf)
         return self._local_search_2opt(soln).path
-
-    def _get_fitness_member(self, path):
-        # Returns the objective for a given path
-        return self._fitness(path)
 
     def _fitness(self, nodes):
         edges = self._get_edges(nodes)
