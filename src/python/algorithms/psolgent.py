@@ -233,7 +233,7 @@ class PSOLGENT(PathBase):
             self.upper_bound - self.lower_bound,
             size=(self.swarm_size, self.ndim, self.member_size))
         # Force Source and Sink to be selected
-        self.pos[:, [0, -1]] = min(np.min(10 * self.lower_bound), np.min(self.pos))
+        self.pos[:, 0, [0, -1]] = min(np.min(10 * self.lower_bound), np.min(self.pos))
         self.paths = np.empty(len(self.pos), dtype='object')
         self.paths[:] = [
             self._pos2path(p, r) for p, r in zip(self.pos, self.rands)
@@ -355,7 +355,7 @@ class PSOLGENT(PathBase):
         disconnected, path = self._check_edges(edges)
         if edges:
             if disconnected:
-                return 1e7  # disconnected path
+                return 1e5*disconnected # no. of bad edges
             cost = self._check_path(path, edges)
             if cost is not False:
                 # Valid path with penalty
@@ -382,7 +382,7 @@ class PSOLGENT(PathBase):
         if edges:
             path = [edge[0] for edge in edges]
             path.append(edges[-1][1])
-            return any(edge[1] not in path for edge in edges), path
+            return sum(edge[1] not in path for edge in edges), path
         else:
             return None, None
 
