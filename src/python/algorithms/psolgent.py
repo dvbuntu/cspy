@@ -171,6 +171,8 @@ class PSOLGENT(PathBase):
         self.best_fit = None
         self.local_best = None
         self.global_best = None
+        self.local_fitness = None
+        self.local_paths = None
         self.sorted_nodes = self._sort_nodes(list(self.G.nodes()))
         self._best_path = None
 
@@ -196,10 +198,12 @@ class PSOLGENT(PathBase):
             paths_new[:] = [
                 self._pos2path(p, r) for p, r in zip(pos_new, new_rands)
             ]
+            #pos_new = np.copy(self._path2order(pos_new, paths_new))
             self._update_best(self.pos, pos_new, self.rands, new_rands,
                               self.paths, paths_new)
             self.pos = pos_new
             self.rands = new_rands
+            self.paths = paths_new
             self.fitness = self._get_fitness(self.paths)
             self._global_best()
             # Save best results
@@ -220,6 +224,16 @@ class PSOLGENT(PathBase):
         if not self.best_path:
             raise Exception("No resource feasible path has been found")
 
+    def _path2order(self, pos, paths):
+        '''Rearrange node order dimension to match path'''
+        if not self.swarm_node_order:
+            return pos
+        else:
+            for i in range(self.swarm_size):
+                ind = [self.sorted_nodes.index(p) for p in paths[i]]
+                pos[i, 1, ind] = sorted(pos[i, 1, ind])
+            return pos
+
     def _init_swarm(self):
         # Initialises the variables that are altered during the algorithm
         self.pos = self.random_state.uniform(self.lower_bound,
@@ -238,7 +252,10 @@ class PSOLGENT(PathBase):
         self.paths[:] = [
             self._pos2path(p, r) for p, r in zip(self.pos, self.rands)
         ]
+        #self.pos = np.copy(self._path2order(self.pos, self.paths))
+        self.local_paths = np.copy(self.paths)
         self.fitness = self._get_fitness(self.paths)
+        self.local_fitness = np.copy(self.fitness)
         self.best = np.copy(self.pos)
         self._global_best()
         self.local_best = np.copy(self.pos)
@@ -275,26 +292,26 @@ class PSOLGENT(PathBase):
                 idx for idx, val in enumerate(zip(old_fitness, new_fitness))
                 if val[0] < val[1]
             ]
-            best[idx_old] = old[idx_old]
-            best_rands[idx_old] = old_rands[idx_old]
-            best_paths[idx_old] = old_paths[idx_old]
-            best_fitness[idx_old] = old_fitness[idx_old]
+            best[idx_old] = np.copy(old[idx_old])
+            best_rands[idx_old] = np.copy(old_rands[idx_old])
+            best_paths[idx_old] = np.copy(old_paths[idx_old])
+            best_fitness[idx_old] = np.copy(old_fitness[idx_old])
             # replace this with just find the rows where it is all zero
             idx_new = [idx for idx in range(self.swarm_size) if idx not in idx_old]
             # replace indices in best with new members if lower fitness
-            best[idx_new] = new[idx_new]
-            best_rands[idx_new] = new_rands[idx_new]
-            best_paths[idx_new] = new_paths[idx_new]
-            best_fitness[idx_new] = new_fitness[idx_new]
+            best[idx_new] = np.copy(new[idx_new])
+            best_rands[idx_new] = np.copy(new_rands[idx_new])
+            best_paths[idx_new] = np.copy(new_paths[idx_new])
+            best_fitness[idx_new] = np.copy(new_fitness[idx_new])
         else:
             best = new
             best_rands = new_rands
             best_paths = new_paths
             best_fitness = new_fitness
-        self.best = np.array(best)
-        self.best_rands = np.array(best_rands)
-        self.best_paths = np.array(best_paths)
-        self.best_fitness = np.array(best_fitness)
+        self.best = np.copy(best)
+        self.best_rands = np.copy(best_rands)
+        self.best_paths = np.copy(best_paths)
+        self.best_fitness = np.copy(best_fitness)
         # Update best known path if better
         if not self.best_fit or self.best_fit > min(self.best_fitness):
             self._best_path = list(self.best_paths[np.argmin(best_fitness)][:])
@@ -319,9 +336,16 @@ class PSOLGENT(PathBase):
             # Maximum length reached
             bottom = top - self.hood_size
         _range = list(range(bottom, top + 1))
-        min_idx = _range[np.argmin(self.fitness[bottom:top])]
-        self.local_best[i] = self.pos[min_idx]
-        self.local_rands[i] = self.rands[min_idx]
+        if self.hood_size:
+            min_idx = _range[np.argmin(self.fitness[bottom:top])]
+        else:
+            min_idx = i
+        # only update if actually better
+        if self.fitness[min_idx] < self.local_fitness[i]:
+            self.local_best[i] = np.copy(self.pos[min_idx])
+            self.local_rands[i] = np.copy(self.rands[min_idx])
+            self.local_fitness[i] = np.copy(self.fitness[min_idx])
+            self.local_paths[i] = np.copy(self.paths[min_idx])
 
     # Fitness #
     # Fitness conversion to path representation of solutions and evaluation
