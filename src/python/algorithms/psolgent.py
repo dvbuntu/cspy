@@ -6,6 +6,7 @@ from math import sqrt
 from abc import ABCMeta
 from logging import getLogger
 from typing import List, Optional, Callable
+from functools import lru_cache
 
 from networkx import DiGraph
 from numpy.random import RandomState
@@ -72,9 +73,6 @@ class PSOLGENT(PathBase):
     swarm_size : int, optional
         number of members in swarm. Default : 50.
 
-    member_size : int, optional
-        number of components per member vector. Default : ``len(G.nodes())``.
-
     neighbourhood_size : int, optional
         size of neighbourhood. Default : 10.
 
@@ -83,7 +81,6 @@ class PSOLGENT(PathBase):
 
     upper_bound : float, optional
         upper bound of initial positions. Default : 1.
-
 
     c1 : float, optional
         constant for 1st term in the velocity equation.
@@ -126,7 +123,6 @@ class PSOLGENT(PathBase):
                  time_limit: Optional[int] = None,
                  threshold: Optional[float] = None,
                  swarm_size: Optional[int] = 50,
-                 member_size: Optional[int] = None,
                  neighbourhood_size: Optional[int] = 10,
                  lower_bound: Optional[float] = -1.,
                  upper_bound: Optional[float] = 1.,
@@ -144,10 +140,10 @@ class PSOLGENT(PathBase):
         self.time_limit = time_limit
         self.threshold = threshold
         self.swarm_size = swarm_size
-        self.member_size = member_size or len(G.nodes())
+        self.member_size = len(G.nodes())
         self.hood_size = neighbourhood_size
-        self.lower_bound = lower_bound * np.ones(member_size)
-        self.upper_bound = upper_bound * np.ones(member_size)
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
         self.c1 = float(c1)
         self.c2 = float(c2)
         self.c3 = float(c3)
@@ -228,6 +224,7 @@ class PSOLGENT(PathBase):
         self.paths[:] = [
             self._pos2path(p, r) for p, r in zip(self.pos, self.rands)
         ]
+        self.local_paths = np.copy(self.paths)
         self.fitness = self._get_fitness(self.paths)
         self.best = np.copy(self.pos)
         self._global_best()
@@ -246,7 +243,7 @@ class PSOLGENT(PathBase):
         ]
 
         u3 = np.zeros((self.swarm_size, self.swarm_size))
-        u3[np.diag_indices_from(u2)] = [
+        u3[np.diag_indices_from(u3)] = [
             self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
         ]
 
@@ -262,6 +259,9 @@ class PSOLGENT(PathBase):
     # also implicitly updates self.best_path
     def _update_best(self, old, new, old_rands, new_rands, old_paths,
                      new_paths):
+        '''
+        Update personal best of each particle
+        '''
         # Updates the best objective function values for each member
         old_fitness = np.array(self._get_fitness(old_paths))
         new_fitness = np.array(self._get_fitness(new_paths))
@@ -327,10 +327,7 @@ class PSOLGENT(PathBase):
     # Fitness conversion to path representation of solutions and evaluation
     def _get_fitness(self, paths):
         # Applies objective function to all members of swarm
-        return [self._evaluate_member(p) for p in paths]
-
-    def _evaluate_member(self, path):
-        return self._get_fitness_member(path)
+        return [self._fitness(tuple(p)) for p in paths]
 
     @staticmethod
     def _discretise_solution(member, rand):
@@ -347,10 +344,7 @@ class PSOLGENT(PathBase):
         soln = Solution(current_nodes, np.inf)
         return self._local_search_2opt(soln).path
 
-    def _get_fitness_member(self, path):
-        # Returns the objective for a given path
-        return self._fitness(path)
-
+    @lru_cache
     def _fitness(self, nodes):
         edges = self._get_edges(nodes)
         disconnected, path = self._check_edges(edges)
@@ -460,7 +454,7 @@ class PSOLGENT(PathBase):
                 candidate = Solution(_2opt_swap(solution.path, i, j), 0)
                 # evaluate candidate solution
                 if candidate.path is not None:
-                    candidate.cost = self._fitness(candidate.path)
+                    candidate.cost = self._fitness(tuple(candidate.path))
                     # Update solution with candidate if lower cost and resource feasible
                     # TODO: difference if we break at first improvement
                     if ((candidate.cost or candidate.cost == 0) and
