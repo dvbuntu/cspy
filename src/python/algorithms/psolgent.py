@@ -344,7 +344,7 @@ class PSOLGENT(PathBase):
         soln = Solution(current_nodes, np.inf)
         return self._local_search_2opt(soln).path
 
-    @lru_cache
+    @lru_cache(128)
     def _fitness(self, nodes):
         edges = self._get_edges(nodes)
         disconnected, path = self._check_edges(edges)
