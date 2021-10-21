@@ -6,6 +6,7 @@ from math import sqrt
 from abc import ABCMeta
 from logging import getLogger
 from typing import List, Optional, Callable
+from functools import lru_cache
 
 from networkx import DiGraph
 from numpy.random import RandomState
@@ -57,7 +58,7 @@ class PSOLGENT(PathBase):
         Maximum number of iterations for algorithm. Default : 100.
 
     max_localiter : int, optional
-        Maximum number of local search iterations. Default : 10.
+        Maximum number of local search iterations. Default : 5.
 
     time_limit : int, optional
         time limit in seconds.
@@ -208,7 +209,7 @@ class PSOLGENT(PathBase):
             self._global_best()
             # Save best results
             self.st_path = self._best_path
-            self.check_feasibility()  # works on st_path
+            self.check_feasibility(check_connect=self.swarm_node_order)  # works on st_path
             # Update local best for each particle
             for i in range(self.swarm_size):
                 self._local_best(i)
@@ -261,20 +262,46 @@ class PSOLGENT(PathBase):
         self.local_best = np.copy(self.pos)
 
     def _get_vel(self):
-        # Generate random numbers
-        u1 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
-        u2 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
-        u3 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
+        if False:
+            # Generate random numbers
+            u1 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
+            u2 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
+            u3 = self.random_state.uniform(0,1, size=(self.swarm_size, self.ndim))
 
-        # Coefficients
-        c = self.c1 + self.c2 + self.c3
-        chi_1 = 2 / abs(2 - c - sqrt(pow(c, 2) - 4 * c))
-        # Returns velocity
-        # transpose so we can broadcast, and transpose back to restore dim
-        return chi_1 * (self.vel +
-                         (self.c1 * (u1.T * (self.best - self.pos).T).T) +
-                         (self.c2 * (u2.T * (self.global_best - self.pos).T).T) +
-                         (self.c3 * (u3.T * (self.local_best - self.pos).T).T))
+            # Coefficients
+            c = self.c1 + self.c2 + self.c3
+            chi_1 = 2 / abs(2 - c - sqrt(pow(c, 2) - 4 * c))
+            # Returns velocity
+            # transpose so we can broadcast, and transpose back to restore dim
+            return chi_1 * (self.vel +
+                             (self.c1 * (u1.T * (self.best - self.pos).T).T) +
+                             (self.c2 * (u2.T * (self.global_best - self.pos).T).T) +
+                             (self.c3 * (u3.T * (self.local_best - self.pos).T).T))
+        else:
+            u1 = np.zeros((self.swarm_size, self.swarm_size))
+            u1[np.diag_indices_from(u1)] = [
+            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
+            ]
+
+            u2 = np.zeros((self.swarm_size, self.swarm_size))
+            u2[np.diag_indices_from(u2)] = [
+            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
+            ]
+
+            u3 = np.zeros((self.swarm_size, self.swarm_size))
+            u3[np.diag_indices_from(u3)] = [
+            self.random_state.uniform(0, 1) for _ in range(self.swarm_size)
+            ]
+         
+            # Coefficients
+            c = self.c1 + self.c2 + self.c3
+            chi_1 = 2 / abs(2 - c - sqrt(pow(c, 2) - 4 * c))
+            # Returns velocity
+            return (chi_1 * (self.vel +
+                (self.c1 * np.dot(u1, np.rollaxis(self.best - self.pos, 1)))) +
+                (self.c2 * np.dot(u2, np.rollaxis(self.global_best - self.pos, 1))) +
+                (self.c3 * np.dot(u3, np.rollaxis(self.local_best - self.pos, 1))))
+
 
     # also implicitly updates self.best_path
     def _update_best(self, old, new, old_rands, new_rands, old_paths,
@@ -352,7 +379,7 @@ class PSOLGENT(PathBase):
     def _get_fitness(self, paths):
         # Applies objective function to all members of swarm
         # paths already have nodes in desired order
-        return [self._fitness(p) for p in paths]
+        return [self._fitness(tuple(p)) for p in paths]
 
     @staticmethod
     def _discretise_solution(member, rand):
@@ -374,6 +401,7 @@ class PSOLGENT(PathBase):
         soln = Solution(current_nodes, np.inf)
         return self._local_search_2opt(soln).path
 
+    @lru_cache
     def _fitness(self, nodes):
         edges = self._get_edges(nodes)
         disconnected, path = self._check_edges(edges)
@@ -422,7 +450,7 @@ class PSOLGENT(PathBase):
             # save st_path to reload later
             old_path = self.st_path
             self.st_path = path[:]
-            if self.check_feasibility(save=True) is True:
+            if self.check_feasibility(save=True, check_connect=self.swarm_node_order) is True:
                 log.debug("Resource feasible path found")
                 self.st_path = old_path
                 return base_cost
@@ -483,7 +511,7 @@ class PSOLGENT(PathBase):
                 candidate = Solution(_2opt_swap(solution.path, i, j), 0)
                 # evaluate candidate solution
                 if candidate.path is not None:
-                    candidate.cost = self._fitness(candidate.path)
+                    candidate.cost = self._fitness(tuple(candidate.path))
                     # Update solution with candidate if lower cost and resource feasible
                     # TODO: difference if we break at first improvement
                     if ((candidate.cost or candidate.cost == 0) and

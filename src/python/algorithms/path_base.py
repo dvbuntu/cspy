@@ -12,7 +12,6 @@ from cspy.preprocessing import preprocess_graph
 
 LOG = getLogger(__name__)
 
-
 class PathBase:
     """
     Parent class for :class:Tabu, :class:GRASP, :class:GreedyElim,
@@ -133,7 +132,7 @@ class PathBase:
                 return _path
         return _path
 
-    def check_feasibility(self, return_edge=True, save=True):
+    def check_feasibility(self, return_edge=True, save=True, check_connect=False):
         """
         Checks for feasibility for a valid source-sink path.
         If the path (in the st_path attribute) is feasible, then it
@@ -145,20 +144,25 @@ class PathBase:
         """
         shortest_path_edges = deque(iter(zip(self.st_path, self.st_path[1:])))
         shortest_path_edges_w_data = deque()
-        try:
+        if check_connect:
+            try:
+                shortest_path_edges_w_data.extend([
+                    (e[0], e[1], self.G[e[0]][e[1]]) for e in shortest_path_edges
+                ])
+            except KeyError:
+                if return_edge:
+                    # reconstruct edge which caused error
+                    for e in shortest_path_edges:
+                        if e[1] not in self.G[e[0]]:
+                            return (e[0], e[1])
+                    else:
+                        raise KeyError('Missing an edge, but all appear in graph')
+                else:
+                    return False
+        else:
             shortest_path_edges_w_data.extend([
                 (e[0], e[1], self.G[e[0]][e[1]]) for e in shortest_path_edges
             ])
-        except KeyError:
-            if return_edge:
-                # reconstruct edge which caused error
-                for e in shortest_path_edges:
-                    if e[1] not in self.G[e[0]]:
-                        return (e[0], e[1])
-                else:
-                    raise KeyError('Missing an edge, but all appear in graph')
-            else:
-                return False
         # init total resources and cost
         total_res = zeros(self.G.graph['n_res'])
         cost = 0
